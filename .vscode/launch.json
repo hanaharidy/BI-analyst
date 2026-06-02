@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI Backend",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["backend.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}",
+      "env": { "PYTHONPATH": "${workspaceFolder}" },
+      "jinja": true
+    },
+    {
+      "name": "Streamlit Frontend",
+      "type": "python",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "frontend/app.py", "--server.port", "8501"],
+      "cwd": "${workspaceFolder}",
+      "env": { "PYTHONPATH": "${workspaceFolder}" }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack",
+      "configurations": ["FastAPI Backend", "Streamlit Frontend"]
+    }
+  ]
+}
