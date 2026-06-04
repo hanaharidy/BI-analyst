@@ -8,7 +8,6 @@ Uses the schema description as context so the LLM always knows the tables.
 import json
 import re
 from langchain_ollama import OllamaLLM
-from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from backend.db.connection import get_schema_description
 from backend.utils.logger import get_logger
@@ -117,12 +116,6 @@ class SQLGeneratorAgent:
         logger.info("SQLGeneratorAgent ready")
 
     def _build_llm(self, cfg: dict):
-        if cfg.get("use_openai"):
-            return ChatOpenAI(
-                model=cfg.get("model", "gpt-4o"),
-                api_key=cfg.get("openai_api_key"),
-                temperature=0,
-            )
         return OllamaLLM(
             model=cfg.get("model", "llama3.1"),
             base_url=cfg.get("base_url", "http://localhost:11434"),

@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings
 import structlog
 
 from backend.db.connection import init_db, create_tables
-from backend.agents.orchestrator import BIOrchestrator
+from backend.agents.orchestrator_dynamic import BIOrchestrator
 from backend.utils.logger import setup_logging, get_logger
 
 

@@ -9,7 +9,6 @@ import json
 import re
 from typing import Any
 from langchain_ollama import OllamaLLM
-from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from backend.utils.logger import get_logger
 
@@ -60,11 +59,8 @@ class QueryUnderstandingAgent:
 
     def _build_llm(self, cfg: dict):
         if cfg.get("use_openai"):
-            return ChatOpenAI(
-                model=cfg.get("model", "gpt-4o"),
-                api_key=cfg.get("openai_api_key"),
-                temperature=0,
-            )
+                pass
+
         return OllamaLLM(
             model=cfg.get("model", "llama3.1"),
             base_url=cfg.get("base_url", "http://localhost:11434"),

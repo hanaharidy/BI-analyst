@@ -79,7 +79,7 @@ EXAMPLE_QUESTIONS = [
 
 def call_api(question: str) -> dict:
     try:
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=300.0) as client:
             resp = client.post(f"{API_BASE}/analyze", json={"question": question})
             resp.raise_for_status()
             return resp.json()
@@ -91,7 +91,7 @@ def call_api(question: str) -> dict:
 
 def fetch_pdf(question: str) -> bytes | None:
     try:
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=300.0) as client:
             resp = client.post(f"{API_BASE}/report/pdf", json={"question": question})
             if resp.status_code == 200:
                 return resp.content

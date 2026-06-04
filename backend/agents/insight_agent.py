@@ -7,7 +7,6 @@ Frames findings as clear, executive-level observations with recommendations.
 
 import json
 from langchain_ollama import OllamaLLM
-from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from backend.utils.logger import get_logger
 
@@ -46,16 +45,10 @@ class InsightGeneratorAgent:
         logger.info("InsightGeneratorAgent ready")
 
     def _build_llm(self, cfg: dict):
-        if cfg.get("use_openai"):
-            return ChatOpenAI(
-                model=cfg.get("model", "gpt-4o"),
-                api_key=cfg.get("openai_api_key"),
-                temperature=0.3,  # slight creativity for narrative
-            )
         return OllamaLLM(
             model=cfg.get("model", "llama3.1"),
             base_url=cfg.get("base_url", "http://localhost:11434"),
-            temperature=0.3,
+            temperature=0,
         )
 
     def generate(self, analysis: dict, intent: dict, question: str) -> list[dict]:
