@@ -8,8 +8,6 @@ Returns figures as JSON (for Streamlit) and PNG bytes (for PDF reports).
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
-import json
 from typing import Any
 from backend.utils.logger import get_logger
 
@@ -39,21 +37,42 @@ LAYOUT_DEFAULTS = dict(
 class VisualizationAgent:
     """Creates Plotly charts based on data and analysis context."""
 
-    def generate(self, df: pd.DataFrame, analysis: dict, intent: dict) -> list[dict]:
+    def __init__(self, llm_config: dict = None):
+        self.llm_config = llm_config
+        logger.info("VisualizationAgent ready")
+
+    def generate(self, df: pd.DataFrame, analysis: dict, intent: dict, question: str = "") -> list[dict]:
         """
-        Returns a list of chart dicts, each with:
-          - 'title': str
-          - 'figure_json': str  (Plotly JSON for Streamlit)
-          - 'figure_png': bytes (for PDF embedding)
+        Generate Plotly charts based on data and analysis.
+        Returns a list of chart dicts with title, JSON, and PNG bytes.
         """
         if df.empty:
             logger.warning("No data to visualize")
             return []
 
+        # ---- 1. Scalar fallback: single numeric value -> KPI card ----
+        numeric_cols = df.select_dtypes(include='number').columns
+        if len(df) == 1 and len(numeric_cols) == 1:
+            value = df.iloc[0, numeric_cols[0]]
+            metric_name = numeric_cols[0].replace('_', ' ').title()
+            fig = go.Figure()
+            fig.add_annotation(text=f"{value:,.0f}", x=0.5, y=0.5, showarrow=False, font_size=48)
+            fig.update_layout(title=f"{metric_name}", xaxis_visible=False, yaxis_visible=False)
+            return [self._package(f"{metric_name} (KPI)", fig)]
+
+        # ---- 2. Time-series fallback: any table with a date/period column + a numeric column ----
+        time_cols = [c for c in df.columns if any(k in c.lower() for k in ['date', 'period', 'month', 'quarter', 'year'])]
+        num_cols = df.select_dtypes(include='number').columns.tolist()
+        if time_cols and len(num_cols) >= 1:
+            date_col = time_cols[0]
+            metric = num_cols[0]
+            fig = px.line(df, x=date_col, y=metric, title=f"{metric.replace('_',' ').title()} over time")
+            fig.update_layout(**LAYOUT_DEFAULTS)
+            return [self._package("Trend", fig)]
+
+        # ---- 3. Original analysis‑type based chart generation ----
         charts = []
         analysis_type = intent.get("analysis_type", "summary")
-
-        logger.info("Generating visualizations", analysis_type=analysis_type)
 
         if analysis_type == "trend":
             charts.extend(self._trend_charts(df, analysis, intent))
@@ -64,7 +83,6 @@ class VisualizationAgent:
         elif analysis_type == "forecast":
             charts.extend(self._forecast_charts(df, analysis, intent))
         else:
-            # Summary: always show a bar + optional trend
             charts.extend(self._ranking_charts(df, analysis, intent))
             if "trend_data" in analysis:
                 charts.extend(self._trend_charts(df, analysis, intent))
@@ -72,9 +90,10 @@ class VisualizationAgent:
         logger.info("Charts generated", count=len(charts))
         return charts
 
-    # ── Chart Builders ────────────────────────────────────────────────────────
+    # ── Chart Builders ───────────────────────────────────────────────────────
 
     def _trend_charts(self, df: pd.DataFrame, analysis: dict, intent: dict) -> list[dict]:
+        """Create line charts for trend analysis (with optional forecast)."""
         charts = []
         trend_data = analysis.get("trend_data")
         if not trend_data:
@@ -86,7 +105,6 @@ class VisualizationAgent:
         if not period_col:
             return charts
 
-        # Line chart with moving average
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=tdf[period_col], y=tdf[metric],
@@ -95,7 +113,9 @@ class VisualizationAgent:
             line=dict(color=COLORS["primary"], width=3),
             marker=dict(size=7),
         ))
-        ma_col = f"ma_3"
+
+        # Add moving average if available
+        ma_col = "ma_3"
         if ma_col in tdf.columns:
             fig.add_trace(go.Scatter(
                 x=tdf[period_col], y=tdf[ma_col],
@@ -103,7 +123,7 @@ class VisualizationAgent:
                 line=dict(color=COLORS["warning"], width=2, dash="dash"),
             ))
 
-        # Overlay forecast
+        # Add forecast if available
         forecast = analysis.get("forecast_next_3", [])
         if forecast:
             last_period = tdf[period_col].iloc[-1]
@@ -115,10 +135,7 @@ class VisualizationAgent:
                 marker=dict(symbol="diamond", size=8),
             ))
 
-        fig.update_layout(
-            title=f"{metric.replace('_', ' ').title()} Trend Over Time",
-            **LAYOUT_DEFAULTS,
-        )
+        fig.update_layout(title=f"{metric.replace('_', ' ').title()} Trend", **LAYOUT_DEFAULTS)
         charts.append(self._package(f"{metric}_trend", fig))
 
         # Growth rate bar chart
@@ -131,26 +148,25 @@ class VisualizationAgent:
                 name="Growth %",
             ))
             fig2.add_hline(y=0, line_dash="solid", line_color=COLORS["muted"])
-            fig2.update_layout(title="Period-over-Period Growth Rate (%)", **LAYOUT_DEFAULTS)
+            fig2.update_layout(title="Period‑over‑Period Growth Rate (%)", **LAYOUT_DEFAULTS)
             charts.append(self._package("growth_rate", fig2))
 
         return charts
 
     def _ranking_charts(self, df: pd.DataFrame, analysis: dict, intent: dict) -> list[dict]:
+        """Create horizontal bar chart for ranking and pie for share."""
         charts = []
         rankings = analysis.get("rankings")
         dim_col = analysis.get("dimension_used")
         metric = analysis.get("primary_metric", "revenue")
 
         if not dim_col or not metric:
-            # Fallback: just aggregate the first string and numeric col
             str_cols = df.select_dtypes(include="object").columns
             num_cols = df.select_dtypes(include="number").columns
             if str_cols.empty or num_cols.empty:
                 return charts
             dim_col, metric = str_cols[0], num_cols[0]
 
-        # Horizontal bar — sorted
         grouped = df.groupby(dim_col)[metric].sum().sort_values(ascending=True).reset_index()
         avg = grouped[metric].mean()
 
@@ -170,13 +186,10 @@ class VisualizationAgent:
         ))
         fig.add_vline(x=avg, line_dash="dash", line_color=COLORS["muted"],
                       annotation_text=f"Avg: ${avg:,.0f}")
-        fig.update_layout(
-            title=f"{metric.replace('_', ' ').title()} by {dim_col.replace('_', ' ').title()}",
-            **LAYOUT_DEFAULTS,
-        )
+        fig.update_layout(title=f"{metric.replace('_', ' ').title()} by {dim_col.replace('_', ' ').title()}", **LAYOUT_DEFAULTS)
         charts.append(self._package(f"ranking_{dim_col}", fig))
 
-        # Pie chart for share
+        # Pie chart for share if <= 10 categories
         if len(grouped) <= 10:
             fig2 = go.Figure(go.Pie(
                 labels=grouped[dim_col], values=grouped[metric],
@@ -189,6 +202,7 @@ class VisualizationAgent:
         return charts
 
     def _comparison_charts(self, df: pd.DataFrame, analysis: dict, intent: dict) -> list[dict]:
+        """Create bar chart comparing groups against overall mean."""
         comparison = analysis.get("comparison_table")
         if not comparison:
             return self._ranking_charts(df, analysis, intent)
@@ -208,16 +222,21 @@ class VisualizationAgent:
         return [self._package("comparison", fig)]
 
     def _forecast_charts(self, df: pd.DataFrame, analysis: dict, intent: dict) -> list[dict]:
-        hist = analysis.get("historical_data", [])
+        """Create line chart with historical data and forecast."""
+        charts = []
+        historical = analysis.get("historical_data", [])
         forecast = analysis.get("forecast_6_periods", [])
-        if not hist:
-            return []
+        if not historical:
+            return charts
 
-        hdf = pd.DataFrame(hist)
+        hdf = pd.DataFrame(historical)
         period_col = self._find_period_col(hdf)
-        metric = hdf.columns[1] if len(hdf.columns) > 1 else None
+        metric = analysis.get("primary_metric", "value")
+        if metric not in hdf.columns and len(hdf.columns) > 1:
+            metric = hdf.columns[1]
+
         if not period_col or not metric:
-            return []
+            return charts
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -233,12 +252,13 @@ class VisualizationAgent:
                 line=dict(color=COLORS["success"], width=2, dash="dot"),
                 marker=dict(symbol="diamond"),
             ))
-        fig.update_layout(title="Forecast (Holt-Winters)", **LAYOUT_DEFAULTS)
+        fig.update_layout(title="Forecast (Holt‑Winters)", **LAYOUT_DEFAULTS)
         return [self._package("forecast", fig)]
 
     # ── Utilities ─────────────────────────────────────────────────────────────
 
     def _find_period_col(self, df: pd.DataFrame) -> str | None:
+        """Find a column that contains date or period information."""
         for col in df.columns:
             if any(k in col.lower() for k in ["period", "date", "month", "quarter"]):
                 return col
@@ -249,8 +269,7 @@ class VisualizationAgent:
         try:
             png_bytes = fig.to_image(format="png", width=900, height=500, scale=2)
         except Exception:
-            png_bytes = None  # kaleido may not be available in all envs
-
+            png_bytes = None
         return {
             "title": name.replace("_", " ").title(),
             "figure_json": fig.to_json(),

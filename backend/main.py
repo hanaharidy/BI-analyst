@@ -2,7 +2,7 @@
 FastAPI Application
 ────────────────────
 Main entry point for the BI Analyst backend.
-Exposes REST endpoints consumed by the Streamlit frontend.
+Uses the dynamic Supervisor‑based orchestrator (tool‑calling agent).
 """
 
 from contextlib import asynccontextmanager
@@ -14,7 +14,8 @@ from pydantic_settings import BaseSettings
 import structlog
 
 from backend.db.connection import init_db, create_tables
-from backend.agents.orchestrator_dynamic import BIOrchestrator
+# Replace the old orchestrator with the new supervisor version
+from backend.orchestrator_supervisor import BISupervisorOrchestrator
 from backend.utils.logger import setup_logging, get_logger
 
 
@@ -38,7 +39,8 @@ settings = Settings()
 setup_logging(settings.log_level)
 logger = get_logger(__name__)
 
-# Build LLM config from settings
+# Build LLM config – kept for consistency, but the new orchestrator
+# uses its own hardcoded model for now (llama3.1). You can extend it later.
 llm_config = {
     "use_openai": settings.use_openai,
     "model": settings.openai_model if settings.use_openai else settings.ollama_model,
@@ -51,10 +53,11 @@ llm_config = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting BI Analyst API")
+    logger.info("Starting BI Analyst API (Supervisor‑based dynamic agent)")
     init_db(settings.database_url)
     create_tables()
-    app.state.orchestrator = BIOrchestrator(llm_config)
+    # Instantiate the new supervisor orchestrator (no llm_config needed, it uses its own)
+    app.state.orchestrator = BISupervisorOrchestrator()
     logger.info("Ready ✓")
     yield
     logger.info("Shutting down")
@@ -62,8 +65,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI Business Intelligence Analyst",
-    description="Multi-agent BI system — ask questions in plain English.",
-    version="1.0.0",
+    description="Multi‑agent BI system with dynamic tool‑calling supervisor.",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -75,11 +78,13 @@ app.add_middleware(
 )
 
 
-# ── Request / Response Models ─────────────────────────────────────────────────
+# ── Request / Response Models (unchanged) ─────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
     question: str
 
+
+from pydantic import BaseModel, Field
 
 class AnalyzeResponse(BaseModel):
     status: str
@@ -91,7 +96,7 @@ class AnalyzeResponse(BaseModel):
     charts: list[dict] = []
     insights: list[dict] = []
     report_markdown: str = ""
-    kpis: list[dict] = []
+    kpis: list[dict] = Field(default_factory=list)   # ✅ forces list even if None
     pdf_available: bool = False
     elapsed_seconds: float = 0
     steps: list[dict] = []
@@ -107,25 +112,21 @@ async def health():
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
-    """
-    Main endpoint: takes a plain-English business question,
-    runs the full agent pipeline, and returns results.
-    """
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
     result = app.state.orchestrator.run(req.question)
 
-    # Strip internal PDF bytes before serializing (accessed via /report/pdf)
+    # Remove internal fields that are not part of the response model
     result.pop("_pdf_bytes", None)
-    result.pop("data", None)  # omit raw rows from API response (can be large)
+    result.pop("supervisor_answer", None)   # extra field from supervisor
 
     return AnalyzeResponse(**{k: v for k, v in result.items() if k in AnalyzeResponse.model_fields})
 
 
 @app.post("/report/pdf")
 async def export_pdf(req: AnalyzeRequest):
-    """Re-runs pipeline and returns PDF report as binary download."""
+    """Rerun pipeline and return PDF report as binary download."""
     result = app.state.orchestrator.run(req.question)
     pdf = result.get("_pdf_bytes")
 
@@ -145,6 +146,5 @@ async def export_pdf(req: AnalyzeRequest):
 
 @app.get("/schema")
 async def get_schema():
-    """Returns the database schema for debugging / frontend display."""
     from backend.db.connection import get_schema_description
     return {"schema": get_schema_description()}

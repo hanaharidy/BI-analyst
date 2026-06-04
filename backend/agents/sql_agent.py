@@ -104,6 +104,14 @@ LIMIT 500;
 - For time filters: use o.order_date BETWEEN dates, not subqueries
 - Keep queries flat and simple — avoid nested CTEs unless truly necessary
 - LIMIT 500 always
+
+**SPECIAL RULE FOR FORECAST INTENT:**
+If the user asks for a forecast (e.g., "revenue forecast for next quarter"), DO NOT try to compute future values in SQL.
+Instead, return a historical time series that can be used for statistical forecasting.
+Example: SELECT DATE_TRUNC('month', o.order_date) AS period, SUM(oi.quantity * oi.unit_price) AS revenue
+FROM orders ... WHERE o.status = 'completed' AND o.order_date >= CURRENT_DATE - INTERVAL '12 months'
+GROUP BY period ORDER BY period;
+Never use CURRENT_DATE + INTERVAL or any future date logic. Only retrieve past data.
 """
 
 

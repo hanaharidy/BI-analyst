@@ -1,21 +1,20 @@
 # 🧠 AI-Powered Business Intelligence Analyst
-### Dynamic Multi-Agent Pipeline with LangGraph
 
-> *Ask any business question in plain English → Get a complete analytical report in under 60 seconds*
+### *Dynamic Multi-Agent Pipeline with LangGraph & Llama 3.1*
+
+> *Ask any business question in plain English → Get a complete analytical report with charts, insights, and SQL in under 2 minutes – 100% local, free, and private.*
 
 ---
 
 ## 🎯 The Problem We Solved
 
-```
-Traditional BI Workflow:
+**Traditional BI Workflow:**  
 Business Question → Developer (SQL) → Analyst (Excel) → Report → Days Later
 
-Our Solution:
-Business Question → AI Pipeline → Complete Report → 60 Seconds
-```
+**Our Solution:**  
+Business Question → AI Agent (Supervisor + Tools) → Complete Report → Under 2 Minutes
 
-In every company, data exists but remains locked behind technical barriers. A sales manager who wants to know *"Which regions are underperforming this quarter?"* has to wait days for a technical team to query, analyze, and report — if they get an answer at all.
+Every company has data locked behind technical barriers. A sales manager who asks *"Which regions are underperforming this quarter?"* waits days for a technical team to query, analyze, and report.
 
 **We eliminated that barrier entirely.**
 
@@ -23,197 +22,119 @@ In every company, data exists but remains locked behind technical barriers. A sa
 
 ## ⚡ Live Demo Questions
 
-Try these in the app:
-
 | Question | What You'll See |
-|---|---|
-| `Show me revenue trends by region for Q4 2025` | Regional trend charts + growth rates |
+|----------|-----------------|
+| `Show me revenue trends by region for Q4 2025` | Regional line chart + growth rates |
 | `Which products are underperforming this quarter?` | Ranked bar chart + anomaly highlights |
 | `Compare sales across customer segments year over year` | Grouped comparison + YoY growth |
 | `Top 5 customers by total revenue in 2025` | Ranking chart + pie share |
-| `Show monthly profit margin trends for Electronics` | Trend line + 3-month forecast |
-| `Detect any revenue anomalies in 2025` | Z-score anomaly detection chart |
+| `What is the revenue forecast for next quarter?` | Historical + forecast line chart |
+| `Detect any revenue anomalies in 2025` | Z‑score anomaly detection chart |
 
 ---
 
 ## 🏗️ System Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    USER QUESTION                         │
-│         "Which regions have the highest growth?"         │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                 LANGGRAPH ENGINE                         │
-│         Dynamic routing between agents                   │
-└─────────────────────────────────────────────────────────┘
-                      │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-   ┌─────────┐  ┌─────────┐  ┌─────────┐
-   │ Agent 1 │  │ Agent 2 │  │ Agent 3 │
-   │  Query  │→ │   SQL   │→ │  Data   │
-   │ Parser  │  │ Writer  │  │ Analyst │
-   └─────────┘  └─────────┘  └─────────┘
-                                   │
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼              ▼
-               ┌─────────┐  ┌─────────┐  ┌─────────┐
-               │ Agent 4 │  │ Agent 5 │  │ Agent 6 │
-               │  Viz    │  │Insights │  │ Report  │
-               │ Charts  │  │   LLM   │  │  PDF    │
-               └─────────┘  └─────────┘  └─────────┘
-                                   │
-                                   ▼
-                    ┌──────────────────────────┐
-                    │    COMPLETE REPORT        │
-                    │  KPIs + Charts + PDF      │
-                    └──────────────────────────┘
-```
+The system uses a **Supervisor Agent** (LLM) that decides which tool to call next. All tools are bound to the LLM using LangGraph's tool‑calling feature.
+
+**Tool sequence (standard full analysis):**
+
+1. **parse_intent** – Converts natural language to structured JSON intent.
+2. **generate_sql** – Writes PostgreSQL query using few‑shot prompting.
+3. **execute_sql** – Runs the query. Self‑healing: if SQL fails, LLM fixes it.
+4. **analyze_data** – LLM decides which statistical analyses to run (trend, ranking, anomaly, forecast).
+5. **visualize** – Creates Plotly charts. Fallbacks: scalar → KPI card, time series → line chart.
+6. **generate_insights** – LLM writes executive insights with numbers and actions.
+7. **write_report** – Compiles Markdown report. PDF via browser "Save as Print".
+
+The supervisor can skip steps, retry on failure, or stop early if the user asks for a partial result (e.g., "just show me the SQL").
 
 ---
 
-## 🔄 Why Dynamic? The LangGraph Difference
+## 🔄 Why Dynamic? (LangGraph Tool‑Calling)
 
-### Old Version (Deterministic)
+**Old deterministic pipeline:** always runs all steps, even if not needed.
+
+**New dynamic supervisor:** the LLM decides the next tool based on the conversation state.
+
 ```python
-# Always runs ALL 6 steps — even if not needed
-step1 → step2 → step3 → step4 → step5 → step6
+def should_continue(state):
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        return "tools"   # execute the requested tool
+    return END           # finish
 ```
 
-### New Version (Dynamic with LangGraph)
-```python
-# LangGraph decides the path based on the data
-def should_analyze(state):
-    if state.get("error"):
-        return END          # ← stops if SQL fails
-    if not state.get("data"):
-        return END          # ← stops if no data
-    return "analyze"        # ← continues if data exists
-```
-
-**The agent decides at each step whether to continue, skip, or stop** — just like a real analyst would.
+The agent decides at each step whether to continue, skip, or stop – just like a real analyst.
 
 ---
 
 ## 🛠️ Tech Stack
 
-```
-┌─────────────────────────────────────────────┐
-│  INTELLIGENCE LAYER                          │
-│  • Llama 3.1 via Ollama (100% FREE, LOCAL)   │
-│  • LangChain — agent coordination            │
-│  • LangGraph — dynamic workflow engine       │
-└─────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────┐
-│  BACKEND                                     │
-│  • FastAPI — REST API                        │
-│  • SQLAlchemy — database ORM                 │
-│  • PostgreSQL — real relational database     │
-└─────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────┐
-│  ANALYTICS                                   │
-│  • Pandas + NumPy — data manipulation        │
-│  • SciPy — statistical analysis             │
-│  • Statsmodels — Holt-Winters forecasting    │
-└─────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────┐
-│  OUTPUT                                      │
-│  • Plotly — interactive charts               │
-│  • WeasyPrint — PDF generation               │
-│  • Streamlit — web dashboard                 │
-└─────────────────────────────────────────────┘
-```
+| Layer | Technology |
+|-------|------------|
+| LLM | Llama 3.1 via Ollama (100% local, free) |
+| Agent Framework | LangGraph + LangChain (tool‑calling) |
+| Backend | FastAPI |
+| Database | PostgreSQL + SQLAlchemy |
+| Data Analysis | Pandas, NumPy, SciPy, Statsmodels |
+| Charts | Plotly |
+| Frontend | Streamlit |
+| PDF Export | Browser "Save as PDF" (no extra dependencies) |
 
 ---
 
-## 🧩 The 6 Agents Explained
+## 🧩 Detailed Tool Descriptions
 
-### 🔍 Agent 1 — Query Understanding
-Takes your plain English question and converts it to structured JSON intent.
+### 🔍 Tool 1 — parse_intent
+Converts natural language to structured JSON.
 
-```
-Input:  "Show revenue trends by region for Q4 2025"
+**Input:** `"Show revenue trends by region for Q4 2025"`
 
-Output: {
+**Output:**
+```json
+{
   "analysis_type": "trend",
   "metrics": ["revenue"],
   "dimensions": ["region"],
-  "time_range": { "period": "Q4 2025", "granularity": "month" },
-  "filters": { "status": "completed" }
+  "time_range": { "period": "Q4 2025", "granularity": "month" }
 }
 ```
 
-### 🗄️ Agent 2 — SQL Generator
-Uses **Few-Shot Prompting** — gives the LLM real examples from our schema, not abstract rules. The model learns patterns and writes correct PostgreSQL for any question.
+### 🗄️ Tool 2 — generate_sql
+Uses few‑shot prompting with real examples from the database schema. The LLM learns patterns and writes correct PostgreSQL.
 
-```sql
--- Generated automatically for the question above:
-SELECT r.name AS region,
-       DATE_TRUNC('month', o.order_date) AS period,
-       SUM(oi.quantity * oi.unit_price) AS revenue
-FROM orders o
-JOIN order_items oi ON oi.order_id = o.id
-JOIN regions r ON r.id = o.region_id
-WHERE o.status = 'completed'
-  AND o.order_date BETWEEN '2025-10-01' AND '2025-12-31'
-GROUP BY r.name, period
-ORDER BY period, revenue DESC;
-```
+### 🔧 Tool 3 — execute_sql
+Executes the query. If an error occurs, the LLM receives the error message and tries to fix the SQL automatically (one retry).
 
-**Self-Healing:** If SQL fails, the LLM sees the error and fixes itself automatically.
+### 📊 Tool 4 — analyze_data
+The LLM decides which statistical analyses to run based on the data shape and question. Available analyses: trend, ranking, comparison, anomaly, forecast. Uses Holt‑Winters for forecasting, Z‑score for anomaly detection.
 
-### 📊 Agent 3 — Data Analyst
-Runs statistical analysis on the results:
-- Growth rates and trend detection
-- Z-score anomaly detection
-- Holt-Winters exponential smoothing for forecasting
-- Falls back to linear regression for short series
+### 📈 Tool 5 — visualize
+Creates Plotly charts. Smart fallbacks ensure something is always shown:
+- Single numeric value → KPI card
+- Time series (date + numeric) → line chart
+- Otherwise → ranking bar chart + pie
 
-### 📈 Agent 4 — Visualization
-Creates interactive Plotly charts — the type adapts to the analysis:
+### 💡 Tool 6 — generate_insights
+The LLM reads the statistical results and writes executive‑level insights. Each insight has a type (positive, warning, risk, opportunity), a title, a body with specific numbers, and a recommended action.
 
-| Analysis Type | Charts Generated |
-|---|---|
-| Trend | Line chart + Growth rate bar |
-| Ranking | Horizontal bar + Pie share |
-| Comparison | Grouped bar chart |
-| Anomaly | Scatter with highlighted outliers |
-| Forecast | Line with dotted forecast extension |
-
-### 💡 Agent 5 — Insight Generator
-The LLM reads the statistical results and writes executive-level insights with specific numbers, typed as positive/warning/risk/opportunity.
-
-### 📄 Agent 6 — Report Writer
-Compiles everything into a formatted Markdown report + renders a professional PDF with charts, KPIs, insights, and the SQL query used.
+### 📄 Tool 7 — write_report
+Compiles everything into a Markdown report. The user can save it as PDF using the browser's print dialog (Ctrl+P / Cmd+P → "Save as PDF").
 
 ---
 
 ## 🗃️ Database Design
 
-Built from scratch with **synthetic but realistic data**:
+Built with synthetic but realistic data:
 
-```
-5 Regions          × 12 Products × 20 Customers
-North America        Electronics    Enterprise
-Europe               Software       SMB  
-Asia Pacific         Furniture      Consumer
-Latin America        Services
-Middle East          Accessories
-
-2,000 Orders  →  5,014 Order Items
-Date range: 2024 – 2026
-```
-
-**Realism built in:**
+- **5 regions** (North America, Europe, Asia Pacific, Latin America, Middle East)
+- **12 products** across 5 categories
+- **20 customers** (Enterprise, SMB, Consumer segments)
+- **2,000 orders** → **5,014 order items**
+- Date range: 2024 – 2026
 - Seasonal patterns (Q4 peaks in North America, summer dips in Europe)
-- 2 intentionally underperforming products for realistic demo scenarios
-- Price variance ±5% per order
+- 2 intentionally underperforming products for realistic demos
 
 ---
 
@@ -231,30 +152,31 @@ pip install -r requirements.txt
 ollama pull llama3.1
 ollama serve
 
-# Seed database
+# Seed the database
 python scripts/seed_database.py
 
-# Terminal 1 — Backend
+# Terminal 1 – Backend
 .venv/bin/uvicorn backend.main:app --reload --port 8000
 
-# Terminal 2 — Frontend
+# Terminal 2 – Frontend
 .venv/bin/streamlit run frontend/app.py
 ```
 
-Open **http://localhost:8501** 🎉
+Open **http://localhost:8501** and ask any business question.
 
 ---
 
 ## 🌟 What Makes This Different
 
-| Feature | This Project | Typical BI Tool |
-|---|---|---|
-| **Language** | Plain English | SQL required |
-| **Setup** | Ask a question | Configure dashboards |
-| **Cost** | Free (local LLM) | $$$  subscriptions |
-| **Privacy** | Data stays local | Cloud upload |
-| **Output** | Full PDF report | Static charts |
-| **AI** | Dynamic agent pipeline | None |
+| Feature | This Project | Traditional BI |
+|---------|--------------|----------------|
+| Input | Plain English | SQL or pre‑built dashboards |
+| Setup | Ask a question | Days of configuration |
+| Cost | Free (local LLM) | $$$ subscriptions |
+| Privacy | Data never leaves your machine | Cloud upload |
+| Output | Full report + charts + PDF | Static charts |
+| Decision making | Dynamic LLM supervisor | Fixed pipelines |
+| Self‑healing | Yes (SQL errors fixed by LLM) | No |
 
 ---
 
@@ -265,28 +187,40 @@ bi-analyst-dynamic/
 ├── backend/
 │   ├── main.py                      # FastAPI app
 │   ├── agents/
-│   │   ├── orchestrator_dynamic.py  # LangGraph pipeline ⭐
 │   │   ├── query_agent.py           # NL → JSON intent
-│   │   ├── sql_agent.py             # Intent → SQL (few-shot)
-│   │   ├── analyst_agent.py         # Statistical analysis
-│   │   ├── viz_agent.py             # Plotly charts
-│   │   ├── insight_agent.py         # LLM insights
-│   │   └── report_agent.py          # PDF generation
-│   ├── db/connection.py             # PostgreSQL + schema
-│   └── tools/stats_tools.py         # Z-score, Holt-Winters
+│   │   ├── sql_agent.py             # Intent → SQL (few‑shot)
+│   │   ├── analyst_agent.py         # Statistical analysis (LLM‑driven)
+│   │   ├── viz_agent.py             # Plotly charts (with fallbacks)
+│   │   ├── insight_agent.py         # Executive insights (LLM)
+│   │   └── report_agent.py          # Markdown + PDF report
+│   ├── tools/
+│   │   ├── stats_tools.py           # Z‑score, Holt‑Winters, etc.
+│   │   └── bi_tools.py              # LangChain tools for supervisor
+│   ├── orchestrator_supervisor.py   # LangGraph supervisor
+│   └── db/connection.py             # PostgreSQL connection
 ├── frontend/
 │   └── app.py                       # Streamlit dashboard
 ├── scripts/
-│   └── seed_database.py             # Demo data generator
+│   └── seed_database.py             # Synthetic data generator
 └── README.md
 ```
 
 ---
 
-## 💬 One-Liner
+## 🔮 Future Improvements
 
-> *"We turned days of technical work into a 60-second conversation — using a free, local AI that never sends your data anywhere."*
+- **Long‑term memory** – Remember user preferences across sessions (LangGraph `BaseStore`)
+- **Multi‑turn conversations** – Follow‑up questions without re‑running the whole pipeline
+- **Voice input** – Speech‑to‑text for hands‑free queries
+- **More chart types** – Let the LLM decide exact chart styles and colors
 
 ---
 
-*Built with ❤️ using Python, LangGraph, Llama 3.1, FastAPI, and PostgreSQL*
+## 💬 One‑Liner
+
+> *"We turned days of technical work into a 2‑minute conversation – using a free, local AI that never sends your data anywhere."*
+
+---
+
+**Built with Python, LangGraph, Llama 3.1, FastAPI, PostgreSQL, and Streamlit.**
+

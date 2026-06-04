@@ -78,6 +78,7 @@ EXAMPLE_QUESTIONS = [
 # ── API Helpers ───────────────────────────────────────────────────────────────
 
 def call_api(question: str) -> dict:
+    """Send question to backend and return JSON result."""
     try:
         with httpx.Client(timeout=300.0) as client:
             resp = client.post(f"{API_BASE}/analyze", json={"question": question})
@@ -90,6 +91,7 @@ def call_api(question: str) -> dict:
 
 
 def fetch_pdf(question: str) -> bytes | None:
+    """Request PDF from backend (used only if WeasyPrint works)."""
     try:
         with httpx.Client(timeout=300.0) as client:
             resp = client.post(f"{API_BASE}/report/pdf", json={"question": question})
@@ -109,9 +111,8 @@ with st.sidebar:
     for q in EXAMPLE_QUESTIONS:
         if st.button(q, key=f"eg_{q[:20]}", use_container_width=True):
             st.session_state["current_question"] = q
-            # Clear previous results when a new question is chosen
+            # Clear previous results
             st.session_state.pop("result", None)
-            st.session_state.pop("cached_pdf", None)
     st.divider()
     st.markdown("#### ℹ️ About")
     st.caption("Multi-agent pipeline: Query Understanding → SQL → Analysis → Visualization → Insights → Report")
@@ -135,9 +136,7 @@ run_btn = st.button("Analyze →", type="primary")
 # ── Run Pipeline ──────────────────────────────────────────────────────────────
 
 if run_btn and question.strip():
-    # Clear stale results from previous question
     st.session_state.pop("result", None)
-    st.session_state.pop("cached_pdf", None)
 
     with st.status("Running analysis pipeline...", expanded=True) as status:
         st.write("🔍 Parsing intent...")
@@ -147,20 +146,16 @@ if run_btn and question.strip():
 
         if result.get("status") == "success":
             status.update(label=f"✅ Analysis complete ({elapsed}s)", state="complete")
-            # Fetch PDF immediately — inside the same run, before any rerun
-            if result.get("pdf_available"):
-                st.session_state["cached_pdf"] = fetch_pdf(question)
         else:
             status.update(label="❌ Pipeline failed", state="error")
 
-    # Persist result so download_button rerun doesn't erase it
     st.session_state["result"] = result
     st.session_state["current_question"] = question
 
 elif run_btn:
     st.warning("Please enter a question.")
 
-# ── Render Results (always from session_state) ────────────────────────────────
+# ── Render Results (from session_state) ───────────────────────────────────────
 
 result = st.session_state.get("result")
 
@@ -186,7 +181,7 @@ if result.get("status") == "no_data":
     st.warning(result.get("error", "No data returned."))
     st.stop()
 
-# ── Pipeline Steps ────────────────────────────────────────────────────────────
+# ── Pipeline Steps (optional) ─────────────────────────────────────────────────
 
 with st.expander("Pipeline trace", expanded=False):
     for step in result.get("steps", []):
@@ -254,15 +249,29 @@ with report_col:
     st.subheader("📄 Executive Summary")
     st.markdown(result.get("report_markdown", ""))
 
-    # PDF is pre-fetched in session_state — download_button won't trigger a rerun
-    cached_pdf = st.session_state.get("cached_pdf")
-    if cached_pdf:
-        st.download_button(
-            label="⬇️ Download PDF Report",
-            data=cached_pdf,
-            file_name=f"bi_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-            mime="application/pdf",
+    # PDF generation using browser's print (works everywhere, no extra dependencies)
+    if st.button("🖨️ Save as PDF (Print)", key="print_pdf"):
+        # Injects JavaScript to open the browser print dialog
+        st.markdown(
+            """
+            <script>
+            window.print();
+            </script>
+            """,
+            unsafe_allow_html=True,
         )
+        st.info("Click 'Print' in the dialog, then choose 'Save as PDF'.")
+    
+    # Optional: if backend WeasyPrint works, offer direct download
+    if result.get("pdf_available"):
+        pdf_bytes = fetch_pdf(question)
+        if pdf_bytes:
+            st.download_button(
+                label="⬇️ Download PDF (direct)",
+                data=pdf_bytes,
+                file_name=f"bi_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+            )
 
 with sql_col:
     st.subheader("🔍 Generated SQL")
@@ -273,4 +282,4 @@ with sql_col:
     intent = result.get("intent", {})
     if intent:
         with st.expander("Parsed Intent"):
-            st.json(intent)
+            st.json(intent)   # ← fixed indentation
